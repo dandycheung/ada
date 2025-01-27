@@ -10,9 +10,36 @@
 #include "ada/parser.h"
 
 using namespace simdjson;
+using regex_provider = ada::url_pattern_regex::std_regex_provider;
 
 constexpr std::string_view URL_PATTERN_TEST_DATA =
     "wpt/urlpatterntestdata.json";
+
+TEST(wpt_urlpattern_tests, test_regex_difference) {
+  // {
+  //   "pattern": [{ "pathname": "/foo/bar" }],
+  //   "inputs": [{ "pathname": "/foo/bar" }],
+  //   "expected_match": {
+  //     "pathname": { "input": "/foo/bar", "groups": {} }
+  //   }
+  // }
+  auto init = ada::url_pattern_init{};
+  init.pathname = "/foo/bar";
+  auto u =
+      ada::parse_url_pattern<ada::url_pattern_regex::std_regex_provider>(init);
+  ASSERT_TRUE(u);
+  auto match = u->exec(init, nullptr);
+  ASSERT_TRUE(match);
+  ASSERT_TRUE(match->has_value());
+
+  std::unordered_map<std::string, std::optional<std::string>> empty_object{};
+
+  ASSERT_EQ(match->value().protocol.input, "");
+  ASSERT_EQ(match->value().protocol.groups, empty_object);
+  ASSERT_EQ(match->value().pathname.input, "/foo/bar");
+  ASSERT_EQ(match->value().pathname.groups, empty_object);
+  SUCCEED();
+}
 
 TEST(wpt_urlpattern_tests, parser_tokenize_basic_tests) {
   auto tokenize_result =
@@ -68,31 +95,36 @@ TEST(wpt_urlpattern_tests, has_regexp_groups) {
   for (const auto& field : fields) {
     std::cout << "field " << field << std::endl;
 
+    ASSERT_FALSE(ada::parse_url_pattern<regex_provider>(create_init(field, "*"))
+                     ->has_regexp_groups());
     ASSERT_FALSE(
-        ada::parse_url_pattern(create_init(field, "*"))->has_regexp_groups());
-    ASSERT_FALSE(ada::parse_url_pattern(create_init(field, ":foo"))
-                     ->has_regexp_groups());
-    ASSERT_FALSE(ada::parse_url_pattern(create_init(field, ":foo?"))
-                     ->has_regexp_groups());
-    ASSERT_TRUE(ada::parse_url_pattern(create_init(field, ":foo(hi)"))
-                    ->has_regexp_groups());
-    ASSERT_TRUE(ada::parse_url_pattern(create_init(field, "(hi)"))
-                    ->has_regexp_groups());
+        ada::parse_url_pattern<regex_provider>(create_init(field, ":foo"))
+            ->has_regexp_groups());
+    ASSERT_FALSE(
+        ada::parse_url_pattern<regex_provider>(create_init(field, ":foo?"))
+            ->has_regexp_groups());
+    ASSERT_TRUE(
+        ada::parse_url_pattern<regex_provider>(create_init(field, ":foo(hi)"))
+            ->has_regexp_groups());
+    ASSERT_TRUE(
+        ada::parse_url_pattern<regex_provider>(create_init(field, "(hi)"))
+            ->has_regexp_groups());
 
     if (field != "protocol" && field != "port") {
-      ASSERT_FALSE(
-          ada::parse_url_pattern(create_init(field, "a-{:hello}-z-*-a"))
-              ->has_regexp_groups());
-      ASSERT_TRUE(ada::parse_url_pattern(create_init(field, "a-(hi)-z-(lo)-a"))
+      ASSERT_FALSE(ada::parse_url_pattern<regex_provider>(
+                       create_init(field, "a-{:hello}-z-*-a"))
+                       ->has_regexp_groups());
+      ASSERT_TRUE(ada::parse_url_pattern<regex_provider>(
+                      create_init(field, "a-(hi)-z-(lo)-a"))
                       ->has_regexp_groups());
     }
   }
 
-  ASSERT_FALSE(ada::parse_url_pattern(
+  ASSERT_FALSE(ada::parse_url_pattern<regex_provider>(
                    ada::url_pattern_init{.pathname = "/a/:foo/:baz?/b/*"})
                    ->has_regexp_groups());
   ASSERT_TRUE(
-      ada::parse_url_pattern(
+      ada::parse_url_pattern<regex_provider>(
           ada::url_pattern_init{.pathname = "/a/:foo/:baz([a-z]+)?/b/*"})
           ->has_regexp_groups());
 
@@ -233,15 +265,14 @@ parse_pattern(
   if (std::holds_alternative<std::string>(init_variant)) {
     auto str_init = std::get<std::string>(init_variant);
     std::cout << "init: " << str_init << std::endl;
-    return ada::parse_url_pattern(
+    return ada::parse_url_pattern<regex_provider>(
         std::string_view(str_init),
         base_url.has_value() ? &base_url_view : nullptr,
         options.has_value() ? &options.value() : nullptr);
   }
 
   auto obj_init = std::get<ada::url_pattern_init>(init_variant);
-  std::cout << "init: " << obj_init.to_string() << std::endl;
-  return ada::parse_url_pattern(
+  return ada::parse_url_pattern<regex_provider>(
       obj_init, base_url.has_value() ? &base_url_view : nullptr,
       options.has_value() ? &options.value() : nullptr);
 }
@@ -416,9 +447,6 @@ TEST(wpt_urlpattern_tests, urlpattern_test_data) {
         main_object.reset();
         if (base_url) {
           std::cerr << "base_url: " << base_url.value_or("") << std::endl;
-        }
-        if (options) {
-          std::cerr << "options: " << options->to_string() << std::endl;
         }
         FAIL() << "Test should have succeeded but failed" << std::endl
                << main_object.raw_json().value() << std::endl;

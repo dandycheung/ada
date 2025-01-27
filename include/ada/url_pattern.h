@@ -7,97 +7,24 @@
 
 #include "ada/implementation.h"
 #include "ada/expected.h"
-#include "ada/url_pattern_regex.h"
 
 #include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
-namespace ada {
+#if ADA_TESTING
+#include <iostream>
+#endif  // ADA_TESTING
 
+namespace ada {
 namespace parser {
 template <typename result_type, typename url_pattern_init,
           typename url_pattern_options, typename regex_provider>
 tl::expected<result_type, errors> parse_url_pattern_impl(
     std::variant<std::string_view, url_pattern_init> input,
-    const std::string_view* base_url, const url_pattern_options* options,
-    regex_provider&& provider);
-}
-
-// Important: C++20 allows us to use concept rather than `using` or `typedef
-// and allows functions with second argument, which is optional (using either
-// std::nullopt or a parameter with default value)
-template <typename F>
-concept url_pattern_encoding_callback = requires(F f, std::string_view sv) {
-  { f(sv) } -> std::same_as<tl::expected<std::string, errors>>;
-};
-
-// A structure providing matching patterns for individual components
-// of a URL. When a URLPattern is created, or when a URLPattern is
-// used to match or test against a URL, the input can be given as
-// either a string or a URLPatternInit struct. If a string is given,
-// it will be parsed to create a URLPatternInit. The URLPatternInit
-// API is defined as part of the URLPattern specification.
-struct url_pattern_init {
-  // @see https://urlpattern.spec.whatwg.org/#process-a-urlpatterninit
-  static tl::expected<url_pattern_init, errors> process(
-      url_pattern_init init, std::string_view type,
-      std::optional<std::string_view> protocol = std::nullopt,
-      std::optional<std::string_view> username = std::nullopt,
-      std::optional<std::string_view> password = std::nullopt,
-      std::optional<std::string_view> hostname = std::nullopt,
-      std::optional<std::string_view> port = std::nullopt,
-      std::optional<std::string_view> pathname = std::nullopt,
-      std::optional<std::string_view> search = std::nullopt,
-      std::optional<std::string_view> hash = std::nullopt);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-protocol-for-init
-  static tl::expected<std::string, errors> process_protocol(
-      std::string_view value, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-username-for-init
-  static tl::expected<std::string, errors> process_username(
-      std::string_view value, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-password-for-init
-  static tl::expected<std::string, errors> process_password(
-      std::string_view value, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-hostname-for-init
-  static tl::expected<std::string, errors> process_hostname(
-      std::string_view value, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-port-for-init
-  static tl::expected<std::string, errors> process_port(
-      std::string_view port, std::string_view protocol, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-pathname-for-init
-  static tl::expected<std::string, errors> process_pathname(
-      std::string_view value, std::string_view protocol, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-search-for-init
-  static tl::expected<std::string, errors> process_search(
-      std::string_view value, std::string_view type);
-
-  // @see https://urlpattern.spec.whatwg.org/#process-hash-for-init
-  static tl::expected<std::string, errors> process_hash(std::string_view value,
-                                                        std::string_view type);
-
-  [[nodiscard]] std::string to_string() const;
-
-  bool operator==(const url_pattern_init&) const;
-
-  std::optional<std::string> protocol{};
-  std::optional<std::string> username{};
-  std::optional<std::string> password{};
-  std::optional<std::string> hostname{};
-  std::optional<std::string> port{};
-  std::optional<std::string> pathname{};
-  std::optional<std::string> search{};
-  std::optional<std::string> hash{};
-  std::optional<std::string> base_url{};
-};
+    const std::string_view* base_url, const url_pattern_options* options);
+}  // namespace parser
 
 enum class url_pattern_part_type : uint8_t {
   // The part represents a simple fixed text string.
@@ -167,8 +94,8 @@ struct url_pattern_compile_component_options {
       std::optional<char> new_prefix = std::nullopt)
       : delimiter(new_delimiter), prefix(new_prefix) {}
 
-  std::string_view get_delimiter() const ada_warn_unused;
-  std::string_view get_prefix() const ada_warn_unused;
+  inline std::string_view get_delimiter() const ada_warn_unused;
+  inline std::string_view get_prefix() const ada_warn_unused;
 
   // @see https://urlpattern.spec.whatwg.org/#options-ignore-case
   bool ignore_case = false;
@@ -184,6 +111,21 @@ struct url_pattern_compile_component_options {
   std::optional<char> prefix{};
 };
 
+// The default options is an options struct with delimiter code point set to
+// the empty string and prefix code point set to the empty string.
+inline url_pattern_compile_component_options
+    url_pattern_compile_component_options::DEFAULT(std::nullopt, std::nullopt);
+
+// The hostname options is an options struct with delimiter code point set
+// "." and prefix code point set to the empty string.
+inline url_pattern_compile_component_options
+    url_pattern_compile_component_options::HOSTNAME('.', std::nullopt);
+
+// The pathname options is an options struct with delimiter code point set
+// "/" and prefix code point set to "/".
+inline url_pattern_compile_component_options
+    url_pattern_compile_component_options::PATHNAME('/', '/');
+
 // A struct providing the URLPattern matching results for a single
 // URL component. The URLPatternComponentResult is only ever used
 // as a member attribute of a URLPatternResult struct. The
@@ -191,7 +133,7 @@ struct url_pattern_compile_component_options {
 // specification.
 struct url_pattern_component_result {
   std::string input;
-  std::unordered_map<std::string, std::string> groups;
+  std::unordered_map<std::string, std::optional<std::string>> groups;
 
   bool operator==(const url_pattern_component_result&) const;
 
@@ -200,7 +142,8 @@ struct url_pattern_component_result {
                       std::ostream* os) {
     *os << "input: '" << result.input << "', group: ";
     for (const auto& group : result.groups) {
-      *os << "(" << group.first << ", " << group.second << ") ";
+      *os << "(" << group.first << ", " << group.second.value_or("undefined")
+          << ") ";
     }
   }
 #endif  // ADA_TESTING
@@ -226,14 +169,24 @@ class url_pattern_component {
   template <url_pattern_encoding_callback F>
   static tl::expected<url_pattern_component, errors> compile(
       std::string_view input, F& encoding_callback,
-      url_pattern_compile_component_options& options,
-      const regex_provider& provider);
+      url_pattern_compile_component_options& options);
 
   // @see https://urlpattern.spec.whatwg.org/#create-a-component-match-result
   url_pattern_component_result create_component_match_result(
-      std::string_view input, std::vector<std::string>&& exec_result);
+      std::string_view input,
+      std::vector<std::optional<std::string>>&& exec_result);
 
-  std::string to_string() const;
+#if ADA_TESTING
+  friend void PrintTo(const url_pattern_component& component,
+                      std::ostream* os) {
+    *os << "pattern: '" << component.pattern
+        << "', has_regexp_groups: " << component.has_regexp_groups
+        << "group_name_list: ";
+    for (const auto& name : component.group_name_list) {
+      *os << name << ", ";
+    }
+  }
+#endif  // ADA_TESTING
 
   typename regex_provider::regex_type regexp{};
   std::string pattern{};
@@ -261,7 +214,11 @@ struct url_pattern_result {
 struct url_pattern_options {
   bool ignore_case = false;
 
-  std::string to_string() const;
+#if ADA_TESTING
+  friend void PrintTo(const url_pattern_options& options, std::ostream* os) {
+    *os << "ignore_case: '" << options.ignore_case;
+  }
+#endif  // ADA_TESTING
 };
 
 // URLPattern is a Web Platform standard API for matching URLs against a
@@ -272,8 +229,7 @@ struct url_pattern_options {
 template <url_pattern_regex::regex_concept regex_provider>
 class url_pattern {
  public:
-  explicit url_pattern(regex_provider&& new_regex_provider)
-      : regex_provider_(new_regex_provider) {}
+  url_pattern() = default;
 
   /**
    * @see https://urlpattern.spec.whatwg.org/#dom-urlpattern-exec
@@ -317,7 +273,18 @@ class url_pattern {
   // @see https://urlpattern.spec.whatwg.org/#url-pattern-has-regexp-groups
   [[nodiscard]] bool has_regexp_groups() const;
 
-  [[nodiscard]] std::string to_string() const;
+#if ADA_TESTING
+  friend void PrintTo(const url_pattern& c, std::ostream* os) {
+    *os << "protocol_component: '" << c.get_protocol() << ", ";
+    *os << "username_component: '" << c.get_username() << ", ";
+    *os << "password_component: '" << c.get_password() << ", ";
+    *os << "hostname_component: '" << c.get_hostname() << ", ";
+    *os << "port_component: '" << c.get_port() << ", ";
+    *os << "pathname_component: '" << c.get_pathname() << ", ";
+    *os << "search_component: '" << c.get_search() << ", ";
+    *os << "hash_component: '" << c.get_hash();
+  }
+#endif  // ADA_TESTING
 
   url_pattern_component<regex_provider> protocol_component{};
   url_pattern_component<regex_provider> username_component{};
@@ -328,14 +295,12 @@ class url_pattern {
   url_pattern_component<regex_provider> search_component{};
   url_pattern_component<regex_provider> hash_component{};
   bool ignore_case_ = false;
-  regex_provider regex_provider_;
 
   template <typename result_type, typename url_pattern_init,
-            typename url_pattern_options, typename regex_provider_>
+            typename url_pattern_options, typename regex_provider_for_parse_url>
   friend tl::expected<result_type, errors> parser::parse_url_pattern_impl(
       std::variant<std::string_view, url_pattern_init> input,
-      const std::string_view* base_url, const url_pattern_options* options,
-      regex_provider_&& provider);
+      const std::string_view* base_url, const url_pattern_options* options);
 };
 
 }  // namespace ada

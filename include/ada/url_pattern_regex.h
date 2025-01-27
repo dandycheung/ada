@@ -6,7 +6,10 @@
 #define ADA_URL_PATTERN_REGEX_H
 
 #include <concepts>
+
+#ifdef ADA_USE_UNSAFE_STD_REGEX_PROVIDER
 #include <regex>
+#endif  // ADA_USE_UNSAFE_STD_REGEX_PROVIDER
 
 namespace ada::url_pattern_regex {
 
@@ -24,7 +27,7 @@ concept regex_concept = requires(T t, std::string_view pattern,
   // Function to perform regex search
   {
     T::regex_search(input, std::declval<typename T::regex_type&>())
-  } -> std::same_as<std::optional<std::vector<std::string>>>;
+  } -> std::same_as<std::optional<std::vector<std::optional<std::string>>>>;
 
   // Function to match regex pattern
   {
@@ -38,16 +41,18 @@ concept regex_concept = requires(T t, std::string_view pattern,
   { T(std::declval<T&&>()) } -> std::same_as<T>;
 };
 
+#ifdef ADA_USE_UNSAFE_STD_REGEX_PROVIDER
 class std_regex_provider {
  public:
   std_regex_provider() = default;
   using regex_type = std::regex;
   static std::optional<regex_type> create_instance(std::string_view pattern,
                                                    bool ignore_case);
-  static std::optional<std::vector<std::string>> regex_search(
+  static std::optional<std::vector<std::optional<std::string>>> regex_search(
       std::string_view input, const regex_type& pattern);
   static bool regex_match(std::string_view input, const regex_type& pattern);
 };
+#endif  // ADA_USE_UNSAFE_STD_REGEX_PROVIDER
 
 }  // namespace ada::url_pattern_regex
 
